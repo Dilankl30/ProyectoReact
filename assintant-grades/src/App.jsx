@@ -18,30 +18,22 @@ export default function App() {
   return (
     <>
       <div id="auth-screen">
-        <div className="auth-orb auth-orb-1"></div>
-        <div className="auth-orb auth-orb-2"></div>
-        <div className="auth-grid-pattern"></div>
-        <div className="auth-wrap">
-          <div className="auth-brand">
-            <div className="auth-brand-badge">ESPOCH · ORELLANA</div>
-            <h1>Sistema Inteligente de Calificaciones</h1>
-            <p>Gestiona RAC, RAAU, actividades y reportes con control por roles.</p>
-            <div className="auth-brand-list">
-              <div>✓ Coordinación académica en tiempo real</div>
-              <div>✓ Monitoreo docente por asignatura</div>
-              <div>✓ Persistencia y trazabilidad por configuración</div>
-            </div>
-          </div>
+        <div className="auth-centered">
+          <div className="auth-header-icon">🎓</div>
+          <div className="auth-title-main">Sistema de Calificaciones</div>
+          <div className="auth-sub-main">Gestión Académica Institucional</div>
           <div className="auth-card">
-            <div className="page-title" style={{marginBottom:"8px"}}>Iniciar sesión</div>
-            <div className="page-sub" style={{marginBottom:"16px"}}>Administrador, Docente y Coordinador</div>
-            <div className="form-group"><label className="form-label">Correo institucional</label><input id="auth-email" className="form-input" placeholder="correo@espoch.edu.ec" /></div>
-            <div className="form-group"><label className="form-label">Clave</label><input id="auth-pass" type="password" className="form-input" placeholder="********" /></div>
-            <button className="btn btn-primary" style={{width:"100%",justifyContent:"center"}} onClick={() => callGlobal("doLogin")}>Ingresar</button>
-            <div className="auth-demo-row">
-              <button className="btn btn-ghost btn-sm" onClick={() => callGlobal("fillDemoCredentials", "admin")}>Demo Admin</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => callGlobal("fillDemoCredentials", "docente")}>Demo Docente</button>
-              <button className="btn btn-ghost btn-sm" onClick={() => callGlobal("fillDemoCredentials", "coordinador")}>Demo Coord.</button>
+            <div className="page-title" style={{marginBottom:"14px"}}>Iniciar Sesión</div>
+            <div className="form-group"><label className="form-label">Correo Institucional</label><input id="auth-email" className="form-input" placeholder="usuario@uni.edu" /></div>
+            <div className="form-group"><label className="form-label">Contraseña</label><input id="auth-pass" type="password" className="form-input" placeholder="••••••••" /></div>
+            <button className="btn btn-primary auth-main-btn" onClick={() => callGlobal("doLogin")}>Ingresar</button>
+            <div className="auth-demo-box">
+              <div style={{fontWeight:600,marginBottom:"6px"}}>Usuarios de demostración (contraseña: 1234)</div>
+              <div className="auth-demo-row">
+                <button className="btn btn-ghost btn-sm" onClick={() => callGlobal("fillDemoCredentials", "coordinador")}>COORD</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => callGlobal("fillDemoCredentials", "docente")}>DOC 1</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => callGlobal("fillDemoCredentials", "docente2")}>DOC 2</button>
+              </div>
             </div>
             <div id="auth-msg" className="auth-msg"></div>
           </div>
@@ -122,6 +114,22 @@ export default function App() {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3h18v18H3z"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
             Coordinación
           </a>
+          <a className="nav-item" data-page="coord-asignaturas" id="nav-coord-asig" href="#coord-asignaturas" onClick={(e) => e.preventDefault()}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M4 4v15.5"/><path d="M20 22V4"/><path d="M8 6h8"/></svg>
+            Asignaturas
+          </a>
+          <a className="nav-item" data-page="coord-rac" id="nav-coord-rac" href="#coord-rac" onClick={(e) => e.preventDefault()}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg>
+            RAC
+          </a>
+          <a className="nav-item" data-page="coord-raau" id="nav-coord-raau" href="#coord-raau" onClick={(e) => e.preventDefault()}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+            RAAU
+          </a>
+          <a className="nav-item" data-page="coord-docentes" id="nav-coord-docentes" href="#coord-docentes" onClick={(e) => e.preventDefault()}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>
+            Docentes por Asignatura
+          </a>
         </nav>
 
         <div className="sidebar-footer">
@@ -189,6 +197,10 @@ export default function App() {
         <div className="page" id="page-reporte"><div className="page-header"><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div className="page-title">Reporte Final</div><div className="page-sub">Evaluación formativa y sumativa para alcanzar los resultados de aprendizaje</div></div><div style={{display:"flex",gap:"8px"}}><button className="btn btn-primary" onClick={() => window.print()}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{width:"14px",height:"14px"}}><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> Imprimir</button></div></div></div><div className="stat-grid" id="rep-stats" style={{gridTemplateColumns:"repeat(4,1fr)",marginBottom:"18px"}}></div><div style={{display:"grid",gridTemplateColumns:"1fr 300px",gap:"18px",marginBottom:"18px"}}><div className="card"><div className="card-header"><div className="card-title">Reporte Detallado</div></div><div className="card-body" style={{padding:0}} id="rep-printable"></div></div><div><div className="card" style={{marginBottom:"18px"}}><div className="card-header"><div className="card-title">Distribución</div></div><div className="card-body"><div className="dist-chart" id="rep-dist"></div></div></div></div></div></div>
 
         <div className="page" id="page-coordinacion"><div className="page-header"><div className="page-title">Panel de Coordinación</div><div className="page-sub">Monitoreo de aplicación RAC/RAAU y mapeo curricular</div></div><div id="coord-content"></div></div>
+        <div className="page" id="page-coord-asignaturas"><div className="page-header"><div className="page-title">Asignaturas</div><div className="page-sub">Asignación docente y seguimiento por asignatura</div></div><div id="coord-content-asignaturas"></div></div>
+        <div className="page" id="page-coord-rac"><div className="page-header"><div className="page-title">RAC</div><div className="page-sub">Gestión de resultados de aprendizaje de carrera</div></div><div id="coord-content-rac"></div></div>
+        <div className="page" id="page-coord-raau"><div className="page-header"><div className="page-title">RAAU</div><div className="page-sub">Gestión de resultados de aprendizaje de asignatura</div></div><div id="coord-content-raau"></div></div>
+        <div className="page" id="page-coord-docentes"><div className="page-header"><div className="page-title">Docentes por Asignatura</div><div className="page-sub">Monitoreo y matriz docente/asignaturas</div></div><div id="coord-content-docentes"></div></div>
       </div>
       </div>
 

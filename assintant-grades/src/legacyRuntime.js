@@ -109,9 +109,10 @@ export function initLegacyRuntime() {
   var COMPONENT_LABELS = { ACD: 'Aprendizaje en Contacto con el Docente', APEX: 'Aprendizaje Práctico Experimental', AAUT: 'Aprendizaje Autónomo' };
   var COMPONENTS = ['ACD', 'APEX', 'AAUT'];
   var USERS = [
-    { email: 'admin@espoch.edu.ec', password: 'Admin123*', role: 'admin', name: 'Administrador General' },
-    { email: 'docente@espoch.edu.ec', password: 'Docente123*', role: 'docente', name: 'Docente Demo' },
-    { email: 'coordinador@espoch.edu.ec', password: 'Coord123*', role: 'coordinador', name: 'Coordinador Académico' }
+    { email: 'admin@uni.edu', password: '1234', role: 'admin', name: 'Administrador General' },
+    { email: 'jperez@uni.edu', password: '1234', role: 'docente', name: 'Prof. Juan Pérez' },
+    { email: 'agomez@uni.edu', password: '1234', role: 'docente', name: 'Prof. Ana Gómez' },
+    { email: 'coordinador@uni.edu', password: '1234', role: 'coordinador', name: 'María Coordinadora' }
   ];
   var ROLE_LABEL = { admin: 'Administrador', docente: 'Docente', coordinador: 'Coordinador' };
 
@@ -122,6 +123,7 @@ export function initLegacyRuntime() {
     savedConfigs: [],
     studentsByConfig: {},
     gradesByConfig: {},
+    teacherAssignments: [],
     students: [],
     grades: [],
     recentActivity: [],
@@ -141,6 +143,7 @@ export function initLegacyRuntime() {
       if (!STATE.activeConfigId) STATE.activeConfigId = '';
       if (!STATE.studentsByConfig) STATE.studentsByConfig = {};
       if (!STATE.gradesByConfig) STATE.gradesByConfig = {};
+      if (!Array.isArray(STATE.teacherAssignments)) STATE.teacherAssignments = [];
       if (!Array.isArray(STATE.students)) STATE.students = [];
       if (!Array.isArray(STATE.grades)) STATE.grades = [];
       if (!Array.isArray(STATE.recentActivity)) STATE.recentActivity = [];
@@ -280,6 +283,7 @@ export function initLegacyRuntime() {
   function roleCanAccess(page) {
     var role = STATE.currentUser && STATE.currentUser.role;
     if (!role) return false;
+    if (page.indexOf('coord-') === 0) return role === 'coordinador' || role === 'admin';
     if (role === 'docente') return page !== 'coordinacion';
     return true;
   }
@@ -297,6 +301,10 @@ export function initLegacyRuntime() {
     if (appShell) appShell.style.display = 'flex';
     var navCoord = document.getElementById('nav-coordinacion');
     if (navCoord) navCoord.style.display = role === 'docente' ? 'none' : '';
+    ['nav-coord-asig', 'nav-coord-rac', 'nav-coord-raau', 'nav-coord-docentes'].forEach(function (id) {
+      var item = document.getElementById(id);
+      if (item) item.style.display = (role === 'coordinador' || role === 'admin') ? '' : 'none';
+    });
   }
 
   function doLogin() {
@@ -315,12 +323,13 @@ export function initLegacyRuntime() {
     if (msgEl) msgEl.textContent = '';
     applyRoleUI();
     updateSidebar();
-    navigate(found.role === 'coordinador' ? 'coordinacion' : 'dashboard');
+    navigate(found.role === 'coordinador' ? 'coord-docentes' : 'dashboard');
     showToast('Bienvenido, ' + found.name, 'success');
   }
 
   function fillDemoCredentials(role) {
-    var user = USERS.find(function (u) { return u.role === role; });
+    var alias = role === 'docente2' ? 'agomez@uni.edu' : null;
+    var user = alias ? USERS.find(function (u) { return u.email === alias; }) : USERS.find(function (u) { return u.role === role; });
     if (!user) return;
     var emailEl = document.getElementById('auth-email');
     var passEl = document.getElementById('auth-pass');
@@ -716,6 +725,7 @@ export function initLegacyRuntime() {
     var snapshot = {
       id: 'cfg_' + Date.now(),
       savedAt: new Date().toLocaleString(),
+      ownerEmail: (STATE.currentUser && STATE.currentUser.email) || '',
       courseConfig: JSON.parse(JSON.stringify(STATE.courseConfig)),
       selectedRACIds: STATE.selectedRACIds.slice(),
       raauEntries: JSON.parse(JSON.stringify(STATE.raauEntries)),
@@ -731,6 +741,10 @@ export function initLegacyRuntime() {
   function applySavedConfig(configId) {
     var found = STATE.savedConfigs.find(function (cfg) { return cfg.id === configId; });
     if (!found) return;
+    if (STATE.currentUser && STATE.currentUser.role === 'docente' && (found.ownerEmail || '') !== STATE.currentUser.email) {
+      showToast('No puede abrir configuraciones de otros docentes.', 'error');
+      return;
+    }
     STATE.courseConfig = JSON.parse(JSON.stringify(found.courseConfig));
     STATE.selectedRACIds = found.selectedRACIds.slice();
     STATE.raauEntries = JSON.parse(JSON.stringify(found.raauEntries));
@@ -770,11 +784,15 @@ export function initLegacyRuntime() {
   function renderSavedConfigs() {
     var target = document.getElementById('cfg-saved-configs');
     if (!target) return;
-    if (!STATE.savedConfigs || STATE.savedConfigs.length === 0) {
+    var visibleConfigs = (STATE.savedConfigs || []).filter(function (cfg) {
+      if (!STATE.currentUser || STATE.currentUser.role !== 'docente') return true;
+      return (cfg.ownerEmail || '') === STATE.currentUser.email;
+    });
+    if (!visibleConfigs || visibleConfigs.length === 0) {
       target.innerHTML = '<div style="font-size:.8rem;color:var(--gray-500)">Aún no existen configuraciones guardadas.</div>';
       return;
     }
-    target.innerHTML = STATE.savedConfigs.map(function (cfg) {
+    target.innerHTML = visibleConfigs.map(function (cfg) {
       var acts = cfg.activities ? cfg.activities.length : 0;
       var raau = cfg.raauEntries ? cfg.raauEntries.length : 0;
       return '<div class="saved-config-item">' +
@@ -1504,6 +1522,15 @@ export function initLegacyRuntime() {
       return (s.apellidos + ' ' + s.nombres + ' ' + s.cedula).toLowerCase().indexOf(query) !== -1;
     });
     var activities = STATE.activities;
+    if (activities.length === 0) {
+      document.getElementById('cal-progress-label').textContent = '0/0 notas';
+      document.getElementById('cal-progress-fill').style.width = '0%';
+      document.getElementById('cal-progress-pct').textContent = '0%';
+      document.getElementById('cal-table-wrap').innerHTML =
+        '<div style="padding:18px;color:var(--gray-600);font-size:.85rem">No hay actividades configuradas todavía. Vaya a Configuración y registre actividades por componente para habilitar la tabla completa de calificaciones.</div>';
+      updateReportAvailability();
+      return;
+    }
     var totalExpected = STATE.students.length * activities.length;
     var totalEntered = 0;
     STATE.students.forEach(function (student) {
@@ -1525,6 +1552,7 @@ export function initLegacyRuntime() {
     var html = '<table class="grade-table results-table"><thead>';
     html += '<tr><th colspan="4" style="text-align:left">Resultado de aprendizaje de la carrera alcanzado</th>';
     grouped.forEach(function (grp) {
+      if (grp.acts.length === 0) html += '<th style="font-size:.62rem">—</th>';
       grp.acts.forEach(function (act) {
         var linkedRaau = STATE.raauEntries.find(function (r) { return r.id === act.raauId; });
         var rac = CAREER_RACS.find(function (r) { return r.id === (linkedRaau ? linkedRaau.racId : act.racId); });
@@ -1535,6 +1563,7 @@ export function initLegacyRuntime() {
 
     html += '<tr><th colspan="4" style="text-align:left">Resultado de aprendizaje de la asignatura alcanzado</th>';
     grouped.forEach(function (grp) {
+      if (grp.acts.length === 0) html += '<th style="font-size:.62rem">—</th>';
       grp.acts.forEach(function (act) {
         var raau = STATE.raauEntries.find(function (r) { return r.id === act.raauId; });
         html += '<th style="font-size:.62rem">' + (raau ? raau.code : 'RAAU') + '</th>';
@@ -1545,13 +1574,13 @@ export function initLegacyRuntime() {
     html += '<tr><th rowspan="2" style="min-width:35px">No.</th><th rowspan="2">Cédula</th><th rowspan="2">Apellidos</th><th rowspan="2">Nombres</th>';
     grouped.forEach(function (grp) {
       var bg = grp.comp === 'ACD' ? '#8bc34a' : grp.comp === 'APEX' ? '#7cb342' : '#689f38';
-      html += '<th colspan="' + grp.acts.length + '" style="background:' + bg + ';color:#111">' + grp.comp + ' (' + COMPONENT_WEIGHTS[grp.comp] + ')</th>';
+      var colSpan = Math.max(grp.acts.length, 1);
+      html += '<th colspan="' + colSpan + '" style="background:' + bg + ';color:#111">' + grp.comp + ' (' + COMPONENT_WEIGHTS[grp.comp] + ')</th>';
     });
     html += '</tr><tr>';
     grouped.forEach(function (grp) {
-      grp.acts.forEach(function (act) {
-        html += '<th style="font-size:.62rem">' + act.name + '<br><span style="font-size:.6rem;color:var(--gray-400)">/' + act.maxScore + '</span></th>';
-      });
+      if (grp.acts.length === 0) html += '<th style="font-size:.62rem;color:var(--gray-400)">Sin actividades</th>';
+      else grp.acts.forEach(function (act) { html += '<th style="font-size:.62rem">' + act.name + '<br><span style="font-size:.6rem;color:var(--gray-400)">/' + act.maxScore + '</span></th>'; });
     });
     html += '</tr></thead><tbody>';
 
@@ -1561,6 +1590,7 @@ export function initLegacyRuntime() {
       html += '<tr><td>' + (idx + 1) + '</td><td style="font-family:var(--mono)">' + student.cedula + '</td><td class="cell-name">' + student.apellidos + '</td><td class="cell-name">' + student.nombres + '</td>';
 
       grouped.forEach(function (grp) {
+        if (grp.acts.length === 0) { html += '<td style="text-align:center;color:var(--gray-400)">—</td>'; return; }
         grp.acts.forEach(function (act) {
           var gradeVal = getGrade(student.id, act.id);
           var hasValue = gradeVal != null;
@@ -1707,9 +1737,21 @@ export function initLegacyRuntime() {
     document.getElementById('rep-printable').innerHTML = reportHtml;
   }
 
-  function renderCoordinacion() {
+  function renderCoordinacion(section) {
     var target = document.getElementById('coord-content');
     if (!target) return;
+    var titleEl = document.querySelector('#page-coordinacion .page-title');
+    var subEl = document.querySelector('#page-coordinacion .page-sub');
+    var labels = {
+      overview: ['Panel de Coordinación', 'Monitoreo de aplicación RAC/RAAU y mapeo curricular'],
+      asignaturas: ['Asignaturas', 'Asignación docente y seguimiento por asignatura'],
+      rac: ['RAC', 'Gestión de resultados de aprendizaje de carrera'],
+      raau: ['RAAU', 'Gestión de resultados de aprendizaje de asignatura'],
+      docentes: ['Docentes por Asignatura', 'Monitoreo y matriz docente/asignaturas']
+    };
+    var selected = labels[section || 'overview'] || labels.overview;
+    if (titleEl) titleEl.textContent = selected[0];
+    if (subEl) subEl.textContent = selected[1];
     var totalConfigs = STATE.savedConfigs.length;
     var totalStudents = Object.keys(STATE.studentsByConfig || {}).reduce(function (sum, key) { return sum + (STATE.studentsByConfig[key] || []).length; }, 0);
     var completion = STATE.savedConfigs.map(function (cfg) {
@@ -1737,16 +1779,45 @@ export function initLegacyRuntime() {
       var cfg = item.cfg.courseConfig || {};
       return '<tr><td>' + (cfg.asignatura || '—') + '</td><td>' + (cfg.docente || '—') + '</td><td>' + (cfg.pao || '—') + '</td><td>' + item.pct + '%</td><td><button class="btn btn-edit btn-sm" onclick="coordOpenConfig(\'' + item.cfg.id + '\')">Gestionar</button></td></tr>';
     }).join('');
+    var assignmentRows = (STATE.teacherAssignments || []).map(function (a) {
+      return '<tr><td>' + a.docenteNombre + '<div style="font-size:.68rem;color:var(--gray-400)">' + a.docenteEmail + '</div></td><td>' + a.carrera + '</td><td>' + a.pao + '</td><td>' + a.asignatura + '</td><td>' + ((a.racs || []).length) + ' / ' + ((a.raau || []).length) + '</td></tr>';
+    }).join('');
     var careerOptions = Object.keys(DB_ESPOCH).map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
+    var docenteOptions = USERS.filter(function (u) { return u.role === 'docente'; }).map(function (u) { return '<option value="' + u.email + '">' + u.name + ' (' + u.email + ')</option>'; }).join('');
+    section = section || 'overview';
+    var showOverview = section === 'overview';
+    var showAsignaturas = section === 'asignaturas';
+    var showDocentes = section === 'docentes';
+    var showRAC = section === 'rac';
+    var showRAAU = section === 'raau';
     target.innerHTML =
       '<div class="coord-layout">' +
       '<div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:0"><div class="stat-card"><div class="stat-label">Configuraciones activas</div><div class="stat-val" style="color:var(--navy)">' + totalConfigs + '</div><div class="stat-sub">Histórico guardado</div></div><div class="stat-card"><div class="stat-label">Estudiantes monitoreados</div><div class="stat-val" style="color:var(--green)">' + totalStudents + '</div><div class="stat-sub">Suma de todas las configuraciones</div></div><div class="stat-card"><div class="stat-label">Avance promedio</div><div class="stat-val" style="color:var(--amber)">' + avgCompletion + '%</div><div class="stat-sub">Carga global de notas</div></div></div>' +
-      '<div class="coord-chart-grid"><div class="card"><div class="card-header"><div class="card-title">Avance por docente</div></div><div class="card-body"><canvas id="coord-chart-docentes" height="180"></canvas></div></div><div class="card"><div class="card-header"><div class="card-title">Estado de configuraciones</div></div><div class="card-body"><canvas id="coord-chart-configs" height="180"></canvas></div></div></div>' +
-      '<div class="card" style="margin-bottom:16px"><div class="card-header"><div class="card-title">Monitoreo docente</div></div><div class="card-body"><table class="data"><thead><tr><th>Docente</th><th>Asignaturas</th><th>Avance</th></tr></thead><tbody>' + (docenteRows || '<tr><td colspan="3">Sin datos</td></tr>') + '</tbody></table></div></div>' +
-      '<div class="card" style="margin-bottom:16px"><div class="card-header"><div class="card-title">Control por asignatura</div><button class="btn btn-primary btn-sm" onclick="coordCreateConfig()">Nueva configuración</button></div><div class="card-body"><table class="data"><thead><tr><th>Asignatura</th><th>Docente</th><th>PAO</th><th>Progreso</th><th></th></tr></thead><tbody>' + (cfgRows || '<tr><td colspan="5">Sin configuraciones guardadas</td></tr>') + '</tbody></table></div></div>' +
-      '<div class="card"><div class="card-header"><div class="card-title">Gestión global RAC/RAAU por asignatura</div></div><div class="card-body"><div class="form-grid"><div class="form-group"><label class="form-label">Carrera</label><select class="form-select" id="coord-career" onchange="coordLoadSubjects()"><option value="">Seleccione carrera</option>' + careerOptions + '</select></div><div class="form-group"><label class="form-label">Asignatura</label><select class="form-select" id="coord-subject"><option value=\"\">Seleccione asignatura</option></select></div></div><div style="display:flex;gap:8px"><button class="btn btn-edit btn-sm" onclick="coordEditMapping()">Editar mapeo RAC/RAAU</button><button class="btn btn-ghost btn-sm" onclick="coordGoConfig()">Ir a configuración docente</button></div></div></div>' +
+      ((showOverview || showDocentes) ? '<div class="coord-chart-grid"><div class="card"><div class="card-header"><div class="card-title">Avance por docente</div></div><div class="card-body"><canvas id="coord-chart-docentes" height="180"></canvas></div></div><div class="card"><div class="card-header"><div class="card-title">Estado de configuraciones</div></div><div class="card-body"><canvas id="coord-chart-configs" height="180"></canvas></div></div></div>' : '') +
+      (showDocentes ? '<div class="card" style="margin-bottom:16px"><div class="card-header"><div class="card-title">Monitoreo docente</div></div><div class="card-body"><table class="data"><thead><tr><th>Docente</th><th>Asignaturas</th><th>Avance</th></tr></thead><tbody>' + (docenteRows || '<tr><td colspan="3">Sin datos</td></tr>') + '</tbody></table></div></div>' : '') +
+      (showAsignaturas ? '<div class="card" style="margin-bottom:16px"><div class="card-header"><div class="card-title">Control por asignatura</div><button class="btn btn-primary btn-sm" onclick="coordCreateConfig()">Nueva configuración</button></div><div class="card-body"><table class="data"><thead><tr><th>Asignatura</th><th>Docente</th><th>PAO</th><th>Progreso</th><th></th></tr></thead><tbody>' + (cfgRows || '<tr><td colspan="5">Sin configuraciones guardadas</td></tr>') + '</tbody></table></div></div>' : '') +
+      (showAsignaturas ? '<div class="card"><div class="card-header"><div class="card-title">Asignación Docente + Asignaturas</div></div><div class="card-body"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><button class="btn btn-primary btn-sm" onclick="coordAddDocente()">+ Nuevo Docente</button><button class="btn btn-edit btn-sm" onclick="coordAddAsignatura()">+ Nueva Asignatura</button></div><div class="form-grid"><div class="form-group"><label class="form-label">Docente</label><select class="form-select" id="coord-doc-email"><option value=\"\">Seleccione docente</option>' + docenteOptions + '</select></div><div class="form-group"><label class="form-label">Carrera</label><select class="form-select" id="coord-career-assignment" onchange="coordLoadSubjectsAssignment()"><option value=\"\">Seleccione carrera</option>' + careerOptions + '</select></div></div><div class="form-grid"><div class="form-group"><label class="form-label">PAO</label><select class="form-select" id="coord-pao-assignment"><option value=\"\">Seleccione PAO</option></select></div><div class="form-group"><label class="form-label">Asignatura</label><select class="form-select" id="coord-subject-assignment"><option value=\"\">Seleccione asignatura</option></select></div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" onclick="coordCreateAssignment()">Asignar docente</button><button class="btn btn-edit btn-sm" onclick="coordManualRAC()">Agregar RAC manual</button><button class="btn btn-edit btn-sm" onclick="coordManualRAAU()">Agregar RAAU manual</button><button class="btn btn-ghost btn-sm" onclick="coordTriggerExcel()">Importar Excel RAC/RAAU</button><input type="file" id="coord-excel-input" accept=\".xlsx,.xls,.csv\" style=\"display:none\" onchange=\"coordImportExcel(this.files)\"></div><table class="data" style="margin-top:12px"><thead><tr><th>Docente</th><th>Carrera</th><th>PAO</th><th>Asignatura</th><th>RAC/RAAU</th></tr></thead><tbody>' + (assignmentRows || '<tr><td colspan=\"5\">Sin asignaciones creadas</td></tr>') + '</tbody></table><div id="coord-docentes-list" style="margin-top:10px"></div></div></div>' : '') +
+      (showRAC ? '<div class="card"><div class="card-header"><div class="card-title">Gestión de RAC</div></div><div class="card-body"><div class="form-grid"><div class="form-group"><label class="form-label">Carrera</label><select class="form-select" id="coord-career-rac" onchange="coordRenderRACList()"><option value=\"\">Seleccione carrera</option>' + careerOptions + '</select></div><div class="form-group" style="display:flex;align-items:flex-end"><button class="btn btn-edit btn-sm" onclick="coordManualRAC()">Agregar RAC manual</button></div></div><div id="coord-rac-list" style="margin-top:10px;font-size:.8rem;color:var(--gray-600)">Seleccione carrera para listar RAC.</div></div></div>' : '') +
+      (showRAAU ? '<div class="card"><div class="card-header"><div class="card-title">Gestión global RAAU por asignatura</div></div><div class="card-body"><div class="form-grid"><div class="form-group"><label class="form-label">Carrera</label><select class="form-select" id="coord-career" onchange="coordLoadSubjects()"><option value="">Seleccione carrera</option>' + careerOptions + '</select></div><div class="form-group"><label class="form-label">Asignatura</label><select class="form-select" id="coord-subject" onchange="coordRenderRAAUList()"><option value=\"\">Seleccione asignatura</option></select></div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-edit btn-sm" onclick="coordEditMapping()">Editar mapeo RAC/RAAU</button><button class="btn btn-edit btn-sm" onclick="coordManualRAAU()">Agregar RAAU manual</button><button class="btn btn-ghost btn-sm" onclick="coordTriggerExcel()">Importar Excel RAC/RAAU</button><input type="file" id="coord-excel-input" accept=\".xlsx,.xls,.csv\" style=\"display:none\" onchange=\"coordImportExcel(this.files)\"></div><div id="coord-raau-list" style="margin-top:10px"></div></div></div>' : '') +
+      (showDocentes ? '<div class="card"><div class="card-header"><div class="card-title">Docentes por Asignatura (Matriz)</div></div><div class="card-body"><table class="data"><thead><tr><th>Docente</th><th>Asignaturas asignadas</th><th>Total</th></tr></thead><tbody>' + coordDocenteMatrixRows() + '</tbody></table></div></div>' : '') +
       '</div>';
-    renderCoordCharts(docentes, completion);
+    if (showOverview || showDocentes) renderCoordCharts(docentes, completion);
+    if (showRAC) coordRenderRACList();
+    if (showRAAU) coordRenderRAAUList();
+    if (showAsignaturas) coordRenderDocentesList();
+  }
+
+  function coordDocenteMatrixRows() {
+    var grouped = {};
+    (STATE.teacherAssignments || []).forEach(function (a) {
+      if (!grouped[a.docenteNombre]) grouped[a.docenteNombre] = [];
+      grouped[a.docenteNombre].push(a.asignatura + ' (PAO ' + a.pao + ')');
+    });
+    var names = Object.keys(grouped);
+    if (names.length === 0) return '<tr><td colspan="3">Sin asignaciones</td></tr>';
+    return names.map(function (name) {
+      return '<tr><td>' + name + '</td><td>' + grouped[name].join(', ') + '</td><td>' + grouped[name].length + '</td></tr>';
+    }).join('');
   }
 
   function renderCoordCharts(docentesMap, completion) {
@@ -1793,6 +1864,264 @@ export function initLegacyRuntime() {
         subject.innerHTML += '<option value="' + mat + '">' + paoKey + ' · ' + mat + '</option>';
       });
     });
+  }
+
+  function coordLoadSubjectsAssignment() {
+    var career = document.getElementById('coord-career-assignment').value;
+    var paoSelect = document.getElementById('coord-pao-assignment');
+    var subject = document.getElementById('coord-subject-assignment');
+    if (!paoSelect || !subject) return;
+    paoSelect.innerHTML = '<option value="">Seleccione PAO</option>';
+    subject.innerHTML = '<option value="">Seleccione asignatura</option>';
+    if (!career || !DB_ESPOCH[career]) return;
+    Object.keys(DB_ESPOCH[career].malla || {}).forEach(function (paoKey) {
+      paoSelect.innerHTML += '<option value="' + paoKey + '">' + paoKey + '</option>';
+    });
+    paoSelect.onchange = function () {
+      subject.innerHTML = '<option value="">Seleccione asignatura</option>';
+      (DB_ESPOCH[career].malla[paoSelect.value] || []).forEach(function (mat) {
+        subject.innerHTML += '<option value="' + mat + '">' + mat + '</option>';
+      });
+    };
+  }
+
+  function coordCreateAssignment() {
+    var docEmail = document.getElementById('coord-doc-email').value;
+    var career = document.getElementById('coord-career-assignment').value;
+    var pao = document.getElementById('coord-pao-assignment').value;
+    var subject = document.getElementById('coord-subject-assignment').value;
+    if (!docEmail || !career || !pao || !subject) {
+      showToast('Complete docente, carrera, PAO y asignatura.', 'error');
+      return;
+    }
+    var docente = USERS.find(function (u) { return u.email === docEmail; });
+    var mapped = (DB_ESPOCH[career].asignaturas[subject] && DB_ESPOCH[career].asignaturas[subject].raau) || [];
+    var racIds = [];
+    mapped.forEach(function (m) { if (racIds.indexOf(m.racId) === -1) racIds.push(m.racId); });
+    STATE.teacherAssignments.unshift({
+      id: 'asg_' + Date.now(),
+      docenteEmail: docEmail,
+      docenteNombre: docente ? docente.name : docEmail,
+      carrera: career,
+      pao: pao,
+      asignatura: subject,
+      racs: racIds.slice(),
+      raau: JSON.parse(JSON.stringify(mapped))
+    });
+    var snapshot = {
+      id: 'cfg_' + Date.now(),
+      savedAt: new Date().toLocaleString(),
+      ownerEmail: docEmail,
+      courseConfig: { periodoAcademico: '', facultad: 'SEDE ORELLANA', carrera: career, asignatura: subject, docente: docente ? docente.name : docEmail, pao: pao, aporte: 'FIN DE CICLO' },
+      selectedRACIds: racIds.slice(),
+      raauEntries: mapped.map(function (r, i) { return { id: 'raau_auto_' + i + '_' + Date.now(), code: r.code, description: r.description, racId: r.racId }; }),
+      activities: []
+    };
+    STATE.savedConfigs.unshift(snapshot);
+    save();
+    renderCoordinacion();
+    showToast('Docente asignado con configuración propia.', 'success');
+  }
+
+  function coordAddDocente() {
+    openModal('Nuevo Docente', '<div class="form-grid"><div class="form-group"><label class="form-label">Nombre</label><input class="form-input" id="coord-new-doc-name" placeholder="Ej: Prof. Luis Ramos"></div><div class="form-group"><label class="form-label">Correo</label><input class="form-input" id="coord-new-doc-email" placeholder="lramos@uni.edu"></div></div><div class="form-group"><label class="form-label">Contraseña</label><input class="form-input" id="coord-new-doc-pass" value="1234"></div>',
+      [{ label: 'Cancelar', cls: 'btn-ghost', action: 'close' }, { label: 'Crear', cls: 'btn-success', action: function () {
+        var name = document.getElementById('coord-new-doc-name').value.trim();
+        var email = document.getElementById('coord-new-doc-email').value.trim().toLowerCase();
+        var pass = document.getElementById('coord-new-doc-pass').value.trim();
+        if (!name || !email || !pass) return;
+        if (USERS.find(function (u) { return u.email === email; })) { showToast('Ya existe un usuario con ese correo.', 'error'); return; }
+        USERS.push({ email: email, password: pass, role: 'docente', name: name });
+        closeModal();
+        renderCoordinacion('asignaturas');
+        showToast('Docente creado correctamente.', 'success');
+      }}]);
+  }
+
+  function coordAddAsignatura() {
+    var careerOptions = Object.keys(DB_ESPOCH).map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
+    openModal('Nueva Asignatura', '<div class="form-grid"><div class="form-group"><label class="form-label">Carrera</label><select class="form-select" id="coord-new-sub-career"><option value="">Seleccione carrera</option>' + careerOptions + '</select></div><div class="form-group"><label class="form-label">PAO</label><input class="form-input" id="coord-new-sub-pao" placeholder="Ej: 5 o NIVELACIÓN"></div></div><div class="form-group"><label class="form-label">Nombre Asignatura</label><input class="form-input" id="coord-new-sub-name" placeholder="Ej: ARQUITECTURA DE SOFTWARE"></div>',
+      [{ label: 'Cancelar', cls: 'btn-ghost', action: 'close' }, { label: 'Crear', cls: 'btn-success', action: function () {
+        var career = document.getElementById('coord-new-sub-career').value;
+        var pao = document.getElementById('coord-new-sub-pao').value.trim();
+        var name = document.getElementById('coord-new-sub-name').value.trim();
+        if (!career || !pao || !name) return;
+        if (!DB_ESPOCH[career].malla[pao]) DB_ESPOCH[career].malla[pao] = [];
+        if (DB_ESPOCH[career].malla[pao].indexOf(name) === -1) DB_ESPOCH[career].malla[pao].push(name);
+        if (!DB_ESPOCH[career].asignaturas[name]) DB_ESPOCH[career].asignaturas[name] = { raau: [] };
+        closeModal();
+        renderCoordinacion('asignaturas');
+        showToast('Asignatura creada en la malla.', 'success');
+      }}]);
+  }
+
+  function coordRenderDocentesList() {
+    var target = document.getElementById('coord-docentes-list');
+    if (!target) return;
+    var docentes = USERS.filter(function (u) { return u.role === 'docente'; });
+    target.innerHTML = '<div style="font-size:.78rem;font-weight:700;color:var(--navy);margin:8px 0">Docentes registrados</div>' +
+      (docentes.map(function (d) {
+        return '<div class="item-row"><div style="font-size:.8rem;flex:1"><strong>' + d.name + '</strong><div style="font-size:.7rem;color:var(--gray-500)">' + d.email + '</div></div></div>';
+      }).join('') || '<div style="font-size:.78rem;color:var(--gray-500)">Sin docentes registrados.</div>');
+  }
+
+  function coordManualRAC() {
+    var careerEl = document.getElementById('coord-career-assignment') || document.getElementById('coord-career-rac');
+    var career = careerEl ? careerEl.value : '';
+    if (!career) { showToast('Seleccione carrera.', 'error'); return; }
+    openModal('Agregar RAC manual', '<div class="form-grid"><div class="form-group"><label class="form-label">Código</label><input class="form-input" id="coord-rac-code" placeholder="RAC6"></div><div class="form-group"><label class="form-label">Descripción</label><input class="form-input" id="coord-rac-desc" placeholder="Descripción del RAC"></div></div>',
+      [{ label: 'Cancelar', cls: 'btn-ghost', action: 'close' }, { label: 'Agregar', cls: 'btn-success', action: function () {
+        var code = document.getElementById('coord-rac-code').value.trim();
+        var desc = document.getElementById('coord-rac-desc').value.trim();
+        if (!code || !desc) return;
+        DB_ESPOCH[career].racs.push({ id: 'rac_manual_' + Date.now(), code: code, description: desc });
+        coordRenderRACList();
+        closeModal(); showToast('RAC agregado.', 'success');
+      }}]);
+  }
+
+  function coordRenderRACList() {
+    var careerEl = document.getElementById('coord-career-rac');
+    var target = document.getElementById('coord-rac-list');
+    if (!careerEl || !target) return;
+    var career = careerEl.value;
+    if (!career || !DB_ESPOCH[career]) {
+      target.innerHTML = 'Seleccione carrera para listar RAC.';
+      return;
+    }
+    var racs = DB_ESPOCH[career].racs || [];
+    if (racs.length === 0) {
+      target.innerHTML = 'No existen RAC para esta carrera.';
+      return;
+    }
+    target.innerHTML = racs.map(function (r) {
+      return '<div class="item-row"><div style="min-width:70px;font-weight:700;color:var(--navy)">' + r.code + '</div><div style="font-size:.8rem;color:var(--gray-600);flex:1">' + r.description + '</div><button class="btn btn-sm btn-ghost" onclick="coordEditRAC(\'' + career + '\',\'' + r.id + '\')">Editar</button><button class="btn btn-sm btn-danger" onclick="coordDeleteRAC(\'' + career + '\',\'' + r.id + '\')">Eliminar</button></div>';
+    }).join('');
+  }
+
+  function coordEditRAC(career, racId) {
+    var rac = (DB_ESPOCH[career].racs || []).find(function (r) { return r.id === racId; });
+    if (!rac) return;
+    openModal('Editar RAC', '<div class="form-grid"><div class="form-group"><label class="form-label">Código</label><input class="form-input" id="coord-edit-rac-code" value="' + rac.code + '"></div><div class="form-group"><label class="form-label">Descripción</label><input class="form-input" id="coord-edit-rac-desc" value="' + rac.description + '"></div></div>',
+      [{ label: 'Cancelar', cls: 'btn-ghost', action: 'close' }, { label: 'Guardar', cls: 'btn-success', action: function () {
+        rac.code = document.getElementById('coord-edit-rac-code').value.trim();
+        rac.description = document.getElementById('coord-edit-rac-desc').value.trim();
+        coordRenderRACList(); closeModal();
+      }}]);
+  }
+
+  function coordDeleteRAC(career, racId) {
+    DB_ESPOCH[career].racs = (DB_ESPOCH[career].racs || []).filter(function (r) { return r.id !== racId; });
+    Object.keys(DB_ESPOCH[career].asignaturas || {}).forEach(function (subject) {
+      var arr = DB_ESPOCH[career].asignaturas[subject].raau || [];
+      DB_ESPOCH[career].asignaturas[subject].raau = arr.filter(function (r) { return r.racId !== racId; });
+    });
+    coordRenderRACList();
+  }
+
+  function coordManualRAAU() {
+    var careerEl = document.getElementById('coord-career-assignment') || document.getElementById('coord-career');
+    var subjectEl = document.getElementById('coord-subject-assignment') || document.getElementById('coord-subject');
+    var career = careerEl ? careerEl.value : '';
+    var subject = subjectEl ? subjectEl.value : '';
+    if (!career || !subject) { showToast('Seleccione carrera y asignatura.', 'error'); return; }
+    var racOptions = (DB_ESPOCH[career].racs || []).map(function (r) { return '<option value="' + r.id + '">' + r.code + '</option>'; }).join('');
+    openModal('Agregar RAAU manual', '<div class="form-grid"><div class="form-group"><label class="form-label">Código</label><input class="form-input" id="coord-raau-code" placeholder="RAAU1"></div><div class="form-group"><label class="form-label">RAC</label><select class="form-select" id="coord-raau-rac">' + racOptions + '</select></div></div><div class="form-group"><label class="form-label">Descripción</label><textarea class="form-input" id="coord-raau-desc"></textarea></div>',
+      [{ label: 'Cancelar', cls: 'btn-ghost', action: 'close' }, { label: 'Agregar', cls: 'btn-success', action: function () {
+        var code = document.getElementById('coord-raau-code').value.trim();
+        var desc = document.getElementById('coord-raau-desc').value.trim();
+        var racId = document.getElementById('coord-raau-rac').value;
+        if (!code || !desc || !racId) return;
+        if (!DB_ESPOCH[career].asignaturas[subject]) DB_ESPOCH[career].asignaturas[subject] = { raau: [] };
+        DB_ESPOCH[career].asignaturas[subject].raau.push({ code: code, description: desc, racId: racId });
+        coordRenderRAAUList();
+        closeModal(); showToast('RAAU agregado.', 'success');
+      }}]);
+  }
+
+  function coordRenderRAAUList() {
+    var careerEl = document.getElementById('coord-career');
+    var subjectEl = document.getElementById('coord-subject');
+    var target = document.getElementById('coord-raau-list');
+    if (!careerEl || !subjectEl || !target) return;
+    var career = careerEl.value;
+    var subject = subjectEl.value;
+    if (!career || !subject || !DB_ESPOCH[career] || !DB_ESPOCH[career].asignaturas[subject]) {
+      target.innerHTML = '<div style="font-size:.8rem;color:var(--gray-500)">Seleccione carrera y asignatura.</div>';
+      return;
+    }
+    var raauArr = DB_ESPOCH[career].asignaturas[subject].raau || [];
+    if (raauArr.length === 0) {
+      target.innerHTML = '<div style="font-size:.8rem;color:var(--gray-500)">No hay RAAU cargados.</div>';
+      return;
+    }
+    target.innerHTML = raauArr.map(function (r, idx) {
+      var rac = (DB_ESPOCH[career].racs || []).find(function (x) { return x.id === r.racId; });
+      return '<div class="item-row"><div style="min-width:70px;font-weight:700;color:var(--navy)">' + r.code + '</div><div style="flex:1"><div style="font-size:.8rem;color:var(--gray-700)">' + r.description + '</div><div style="font-size:.68rem;color:var(--gray-400)">' + (rac ? rac.code : r.racId) + '</div></div><button class="btn btn-sm btn-ghost" onclick="coordEditRAAUItem(\'' + career + '\',\'' + subject + '\',' + idx + ')">Editar</button><button class="btn btn-sm btn-danger" onclick="coordDeleteRAAUItem(\'' + career + '\',\'' + subject + '\',' + idx + ')">Eliminar</button></div>';
+    }).join('');
+  }
+
+  function coordEditRAAUItem(career, subject, index) {
+    var item = (DB_ESPOCH[career].asignaturas[subject].raau || [])[index];
+    if (!item) return;
+    var racOptions = (DB_ESPOCH[career].racs || []).map(function (r) { return '<option value="' + r.id + '"' + (r.id === item.racId ? ' selected' : '') + '>' + r.code + '</option>'; }).join('');
+    openModal('Editar RAAU', '<div class="form-grid"><div class="form-group"><label class="form-label">Código</label><input class="form-input" id="coord-edit-raau-code" value="' + item.code + '"></div><div class="form-group"><label class="form-label">RAC</label><select class="form-select" id="coord-edit-raau-rac">' + racOptions + '</select></div></div><div class="form-group"><label class="form-label">Descripción</label><textarea class="form-input" id="coord-edit-raau-desc">' + item.description + '</textarea></div>',
+      [{ label: 'Cancelar', cls: 'btn-ghost', action: 'close' }, { label: 'Guardar', cls: 'btn-success', action: function () {
+        item.code = document.getElementById('coord-edit-raau-code').value.trim();
+        item.description = document.getElementById('coord-edit-raau-desc').value.trim();
+        item.racId = document.getElementById('coord-edit-raau-rac').value;
+        coordRenderRAAUList();
+        closeModal();
+      }}]);
+  }
+
+  function coordDeleteRAAUItem(career, subject, index) {
+    DB_ESPOCH[career].asignaturas[subject].raau.splice(index, 1);
+    coordRenderRAAUList();
+  }
+
+  function coordTriggerExcel() {
+    var input = document.getElementById('coord-excel-input');
+    if (input) input.click();
+  }
+
+  async function coordImportExcel(files) {
+    var file = files && files[0];
+    var careerEl = document.getElementById('coord-career-assignment') || document.getElementById('coord-career');
+    var subjectEl = document.getElementById('coord-subject-assignment') || document.getElementById('coord-subject');
+    var career = careerEl ? careerEl.value : '';
+    var subject = subjectEl ? subjectEl.value : '';
+    if (!file || !career || !subject) { showToast('Seleccione carrera/asignatura y archivo.', 'error'); return; }
+    try {
+      var XLSX = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
+      var data = await file.arrayBuffer();
+      var workbook = XLSX.read(data, { type: 'array' });
+      var firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      var rows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
+      var racByCode = {};
+      (DB_ESPOCH[career].racs || []).forEach(function (r) { racByCode[String(r.code).trim().toUpperCase()] = r; });
+      var importedRaaus = [];
+      rows.forEach(function (row) {
+        var racCode = String(row.RAC_CODE || row.RAC || '').trim().toUpperCase();
+        var racDesc = String(row.RAC_DESC || row.RAC_DESCRIPCION || '').trim();
+        var raauCode = String(row.RAAU_CODE || row.RAAU || '').trim();
+        var raauDesc = String(row.RAAU_DESC || row.RAAU_DESCRIPCION || '').trim();
+        if (!racCode || !raauCode || !raauDesc) return;
+        if (!racByCode[racCode]) {
+          var newRac = { id: 'rac_excel_' + Date.now() + '_' + racCode, code: racCode, description: racDesc || ('RAC ' + racCode) };
+          DB_ESPOCH[career].racs.push(newRac);
+          racByCode[racCode] = newRac;
+        }
+        importedRaaus.push({ code: raauCode, description: raauDesc, racId: racByCode[racCode].id });
+      });
+      if (!DB_ESPOCH[career].asignaturas[subject]) DB_ESPOCH[career].asignaturas[subject] = { raau: [] };
+      DB_ESPOCH[career].asignaturas[subject].raau = importedRaaus;
+      save();
+      coordRenderRAAUList();
+      showToast('Importación Excel completada: ' + importedRaaus.length + ' RAAU.', 'success');
+    } catch (e) {
+      showToast('No se pudo procesar el Excel.', 'error');
+    }
   }
 
   function coordEditMapping() {
@@ -1843,6 +2172,10 @@ export function initLegacyRuntime() {
     else if (page === 'calificaciones') renderCalificaciones();
     else if (page === 'reporte') renderReporte();
     else if (page === 'coordinacion') renderCoordinacion();
+    else if (page === 'coord-asignaturas') renderCoordinacion('asignaturas');
+    else if (page === 'coord-rac') renderCoordinacion('rac');
+    else if (page === 'coord-raau') renderCoordinacion('raau');
+    else if (page === 'coord-docentes') renderCoordinacion('docentes');
     updateReportAvailability();
   }
 
@@ -1857,7 +2190,8 @@ export function initLegacyRuntime() {
     }
     document.querySelectorAll('.page').forEach(function (p) { p.classList.remove('active'); });
     document.querySelectorAll('.nav-item').forEach(function (n) { n.classList.remove('active'); });
-    var pageEl = document.getElementById('page-' + page);
+    var normalizedPage = page.indexOf('coord-') === 0 ? 'coordinacion' : page;
+    var pageEl = document.getElementById('page-' + normalizedPage);
     if (pageEl) pageEl.classList.add('active');
     var navEl = document.querySelector('.nav-item[data-page="' + page + '"]');
     if (navEl) navEl.classList.add('active');
@@ -1912,6 +2246,20 @@ export function initLegacyRuntime() {
   window.coordOpenConfig = coordOpenConfig;
   window.coordCreateConfig = coordCreateConfig;
   window.coordGoConfig = coordGoConfig;
+  window.coordLoadSubjectsAssignment = coordLoadSubjectsAssignment;
+  window.coordCreateAssignment = coordCreateAssignment;
+  window.coordAddDocente = coordAddDocente;
+  window.coordAddAsignatura = coordAddAsignatura;
+  window.coordManualRAC = coordManualRAC;
+  window.coordRenderRACList = coordRenderRACList;
+  window.coordEditRAC = coordEditRAC;
+  window.coordDeleteRAC = coordDeleteRAC;
+  window.coordManualRAAU = coordManualRAAU;
+  window.coordRenderRAAUList = coordRenderRAAUList;
+  window.coordEditRAAUItem = coordEditRAAUItem;
+  window.coordDeleteRAAUItem = coordDeleteRAAUItem;
+  window.coordTriggerExcel = coordTriggerExcel;
+  window.coordImportExcel = coordImportExcel;
 
   var carrera = document.getElementById('cfg-carrera');
   var pao = document.getElementById('cfg-pao');
